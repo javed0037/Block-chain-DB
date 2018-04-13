@@ -10,7 +10,12 @@
   "author": "",
   "license": "ISC",
   "dependencies": {
+    "async": "^2.6.0",
     "bigchaindb-driver": "^4.0.0",
-    "express": "^4.16.3"
+    "bigchaindb-orm": "^1.0.4",
+    "bip39": "^2.5.0",
+    "express": "^4.16.3",
+    "mongoose": "^5.0.14",
+    "request": "^2.85.0"
   }
 }

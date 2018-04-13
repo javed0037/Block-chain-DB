@@ -1,100 +1,121 @@
-const express = require('express');
-const bodyParser = require('body-parser');
-//const driver = require('bigchaindb-driver')
-const app = express();
-app.set('port', (process.env.PORT || 5000));
-
-app.use(bodyParser.urlencoded({
-    extended: false
-}));
-app.use(bodyParser.json({
-    limit: '50mb'
-}));
-
-//app.use(express.static(path.join(__dirname,'apis_docs')));
-app.get('/', (req, res) => res.status(200).json({
-    'message': 'Server running'
-}))
-
-/*bigchain db==========>>>*/
 const driver = require('bigchaindb-driver')
+const Request = require('request');
+const Async = require('async')
+const mongoose = require('mongoose');
+const Trasaction = require('./models/transaction')
+const DB_URL = 'mongodb://127.0.0.1/bigchain'
+const log =  console.log
 
-// BigchainDB server instance or testnetwork (e.g. https://test.bigchaindb.com/api/v1/)
-const API_PATH = 'https://test.bigchaindb.com/api/v1/'
+mongoose.connection.openUri(DB_URL);
+mongoose.connection.on('connected',  ()=> {  
+ console.log('success','Mongoose default connection open to ' + DB_URL);
+}); 
 
-// Create a new keypair for Alice and Bob
-const alice = new driver.Ed25519Keypair()
-const bob = new driver.Ed25519Keypair()
-
-console.log('Alice: ', alice)
-console.log('Bob: ', bob)
-
-// Define the asset to store, in this example
-// we store a bicycle with its serial number and manufacturer
-const assetdata = {
-        'bicycle': {
-                'serial_number': 'cde',
-                'manufacturer': 'Bicycle Inc.',
-        }
+ let bdb = new driver.Connection('https://test.bigchaindb.com/api/v1/', {
+   app_id: '158096df',
+   app_key: '22bd99ee2b2ac9dc1df35440e1a4c4ec'
+})
+function getTransection(tx,callback)
+{
+    Request({url: 'https://test.bigchaindb.com/api/v1/transactions/'+tx}, function (error, response, body) {
+        // console.log("body:::::: ",body)
+        return callback(body);
+});
 }
+// getTransection(); 
 
-// Metadata contains information about the transaction itself
-// (can be `null` if not needed)
-// E.g. the bicycle is fabricated on earth
-const metadata = {'planet': 'earth'}
-
-// Construct a transaction payload
-const txCreateAliceSimple = driver.Transaction.makeCreateTransaction(
-        assetdata,
-        metadata,
-
-        // A transaction needs an output
-        [ driver.Transaction.makeOutput(
-                        driver.Transaction.makeEd25519Condition(alice.publicKey))
-        ],
-        alice.publicKey
-)
-console.log("txCreateAliceSimple==>",txCreateAliceSimple)
-
-// Sign the transaction with private keys of Alice to fulfill it
-const txCreateAliceSimpleSigned = driver.Transaction.signTransaction(txCreateAliceSimple, alice.privateKey)
-console.log("txCreateAliceSimpleSigned====>>>",txCreateAliceSimpleSigned)
-// Send the transaction off to BigchainDB
-const conn = new driver.Connection(API_PATH)
-console.log("connnn===>>>",conn.postTransactionCommit())
-
-conn.postTransactionCommit(txCreateAliceSimpleSigned)
-        .then(retrievedTx => console.log('Transaction', retrievedTx.id, 'successfully posted.'))
-        // With the postTransactionCommit if the response is correct, then the transaction
-        // is valid and commited to a block
-
-        // Transfer bicycle to Bob
-        .then(() => {
-                const txTransferBob = driver.Transaction.makeTransferTransaction(
-                        // signedTx to transfer and output index
-                        [{ tx: txCreateAliceSimpleSigned, output_index: 0 }],
-                        [driver.Transaction.makeOutput(driver.Transaction.makeEd25519Condition(bob.publicKey))],
-                        // metadata
-                        {price: '100 euro'}
-                )
-
-                // Sign with alice's private key
-                let txTransferBobSigned = driver.Transaction.signTransaction(txTransferBob, alice.privateKey)
-                console.log('Posting signed transaction: ', txTransferBobSigned)
-
-                // Post with commit so transaction is validated and included in a block
-                return conn.postTransactionCommit(txTransferBobSigned)
+function step(address)
+{
+    counter = 0;
+getTransection('a89c0eaa7c2587a004733dbadcfb0e6485f89bcc41d105a78babcbb055e26938',function(data)
+    {
+         console.log("data in stepOne: ",data);
+        data = JSON.parse(data)
+        var transactionData = new Trasaction(data)
+        transactionData.save((err,res)=>{
+            if(err)
+                log('error==>>',err)
+            else
+                log('ress===>>>>',res)
         })
-        .then(res => {
-                console.log('Response from BDB server:', res)
-                return res.id
+        Async.forEachLimit(data.asset.data.step,1,function(phase,next)
+        {
+            if(phase.user.publicKey == address)
+            console.log("you having the permission of: ",phase.user.permisssion)
+        else
+        {
+            counter++;
+            if(counter<data.asset.data.step.length)
+                next();
+            else
+                console.log("sorry you are not in the cycle")
+        }
         })
-        .then(tx => {
-                console.log('Is Bob the owner?', tx['outputs'][0]['public_keys'][0] == bob.publicKey)
-                console.log('Was Alice the previous owner?', tx['inputs'][0]['owners_before'][0] == alice.publicKey )
-        })
-        // Search for asset based on the serial number of the bicycle
-        .then(() => conn.searchAssets('Bicycle Inc.'))
-        .then(assets => console.log('Found assets with serial number Bicycle Inc.:', assets))
+        // if(data.asset.data.step1.user.publicKey == 'AuSa7SWd9cLA6CjLnHMXY8da1xhBrEDayHGNy8rezGtu')
+        //     console.log("you are elligible to READ this meta data",data.metadata);
+        // else
+        //     console.log("You are not a valid user")
+    });
+}
+ step('Dh2Tfpyh9ZxVwdtPSb1wapGbkVwzyZq7bjDb7YHKNcyD')
+// const alice = new driver.Ed25519Keypair()
+//  console.log('alice:   ',alice)
 
-app.listen(app.get('port'), () => console.log('Server running on ' + app.get('port')));
+
+//  var asset = {
+//     'step': [{
+//         'user':{
+//             publicKey: 'AuSa7SWd9cLA6CjLnHMXY8da1xhBrEDayHGNy8rezGtu',
+//             privateKey: '4LekhrsYoaWW7TP6kaqNbKzSPUR3pnKjjv4ZzGYykuKJ',
+//             permisssion:'read'
+//         }
+//     },{
+//          'user':{
+//             publicKey: '5c166qF17XNtEWKTnYc4osq9NYvn3gWVzY24gcR9LpEM',
+//               privateKey: '4npDNftWfCbZAj6dDHH5uZzPMMiS5iF4xuPBCaXb8rLu',
+//             permisssion:'write'
+//         }
+//     },{
+//          'user':{
+//             publicKey: 'Dh2Tfpyh9ZxVwdtPSb1wapGbkVwzyZq7bjDb7YHKNcyD',
+//             privateKey: 'DjaNxipCcNk2cyWr1Ev4FATJUKwHxsyoihaYuSLmxAUS',
+//             permisssion:'update'
+//         }
+//     },{
+//          'user':{
+//             publicKey: 'D7bSmd9sVodHhgrvaTAduNFdjchg4acpCC2eZxzkJ4pQ',
+//             privateKey: 'BBfP8fARueM5Xtvfqfndn8QSyv64gVLBgKMee7xVoM6Y',
+//             permisssion:'aprrove'
+//         }
+//     }],
+//     datetime: new Date().toString()
+//  }
+//  var metadata = {
+//     'phase1':'admin steps'
+//  }
+// // Construct a transaction payload
+// const tx = driver.Transaction.makeCreateTransaction(
+//     // Define the asset to store, in this example it is the current temperature
+//     // (in Celsius) for the city of Berlin.
+//     asset,
+ 
+//     // Metadata contains information about the transaction itself
+//     // (can be `null` if not needed)
+//     metadata,
+//     // A transaction needs an output
+//     [ driver.Transaction.makeOutput(
+//             driver.Transaction.makeEd25519Condition(alice.publicKey))
+//     ],
+//     alice.publicKey
+// )
+//  // console.log("tx:  ",tx);
+// // Sign the transaction with private keys
+// const txSigned = driver.Transaction.signTransaction(tx, alice.privateKey)
+//  // console.log("txSigned:  ",txSigned);
+// // Send the transaction off to BigchainDB
+// // const conn = new driver.Connection(bdb)
+ 
+// bdb.postTransaction(txSigned)
+//     // .then(() => bdb.pollStatusAndFetchTransaction(txSigned.id))
+//     .then(retrievedTx => console.log('Transaction', retrievedTx.id, 'successfully posted.'))
+//     .catch((unsuccess)=>console.log("unsuccess:   ",unsuccess))
